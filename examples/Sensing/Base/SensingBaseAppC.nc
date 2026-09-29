@@ -41,33 +41,18 @@
 configuration SensingBaseAppC{}
 implementation {
   components MainC, SensingBaseC as App;
-  components new QueueC(message_t, MSG_QUEUE_SIZE) as Queue;
   components LedsC;
 
   components PrintfC, SerialStartC;
 
   MainC.Boot <- App;
-  App.MsgQueue -> Queue;
   App.Leds -> LedsC;
-
-  components SerialActiveMessageC as Serial;
-  App.SerialAMControl -> Serial;
-  App.SerialAMPacket -> Serial;
-  App.SerialPacket -> Serial;
 
   components ActiveMessageC as Radio;
   App.RadioAMControl -> Radio;
   App.RadioAMPacket -> Radio;
-  App.RadioPacket -> Radio;
-
-  components new SerialAMReceiverC(AM_SERIAL_REQUEST_SAMPLES_MSG) as SerialRequestSampleMsgsReceiver;
-  components new AMSenderC(AM_REQUEST_SAMPLES_MSG) as RadioRequestSampleMsgsSender;
-  App.SerialRequestSampleMsgsReceive -> SerialRequestSampleMsgsReceiver;
-  App.RadioRequestSampleMsgsSend -> RadioRequestSampleMsgsSender;
 
   components new AMReceiverC(AM_SAMPLE_MSG) as RadioSampleMsgReceiver;
-  components new SerialAMSenderC(AM_SERIAL_SAMPLE_MSG) as SerialSampleMsgSender;
   App.RadioSampleMsgReceive -> RadioSampleMsgReceiver;
-  App.SerialSampleMsgSend -> SerialSampleMsgSender;
 }
 

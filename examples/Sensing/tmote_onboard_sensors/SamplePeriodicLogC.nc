@@ -40,6 +40,7 @@ generic configuration SamplePeriodicLogC(uint32_t sampling_period,
                                                         volume_id_t volume) {
   provides{
     interface SampleLogRead<sensor_sample_t>;
+    interface LatestSample<sensor_sample_t>;
   }
 }
 implementation {
@@ -59,6 +60,7 @@ implementation {
   components new LogStorageC(volume, TRUE);
   components new SampleLogReaderC(sensor_sample_t) as LogReader;
   SampleLogRead = LogReader;
+  LatestSample = LogReader;
   MainC.Boot <- PeriodicLogger;
   PeriodicLogger.LogWrite -> LogStorageC;
   LogReader.LogRead -> LogStorageC;

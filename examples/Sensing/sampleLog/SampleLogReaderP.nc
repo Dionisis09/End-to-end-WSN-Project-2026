@@ -37,6 +37,7 @@
 generic module SampleLogReaderP(typedef sample_type_t) {
   provides {
     interface SampleLogRead<sample_type_t>;
+    interface LatestSample<sample_type_t>;
   }
   uses {
     interface LogRead;
@@ -45,7 +46,31 @@ generic module SampleLogReaderP(typedef sample_type_t) {
 }
 implementation {
   sample_type_t sample;
+  sample_type_t latestSample;
+  bool latestAvailable = FALSE;
   storage_cookie_t writeLocation;
+
+  command bool LatestSample.available() {
+    return latestAvailable;
+  }
+
+  command error_t LatestSample.get(sample_type_t* dest) {
+    bool hasSample;
+
+    if(dest == NULL)
+      return FAIL;
+
+    atomic {
+      hasSample = latestAvailable;
+      if(hasSample == TRUE)
+        *dest = latestSample;
+    }
+
+    if(hasSample == FALSE)
+      return FAIL;
+
+    return SUCCESS;
+  }
 
   command error_t SampleLogRead.readFirst() {
     return call LogRead.seek(SEEK_BEGINNING);
@@ -70,8 +95,24 @@ implementation {
     }
     else signal SampleLogRead.readDone(&sample, error);
   }
-  event void LogWrite.appendDone(void* buf, storage_len_t len, bool recordsLost, error_t error) {}
-  event void LogWrite.eraseDone(error_t error) {}
+
+  event void LogWrite.appendDone(void* buf, storage_len_t len, bool recordsLost, error_t error) {
+    if(error == SUCCESS && buf != NULL && len == sizeof(sample_type_t)) {
+      atomic {
+        latestSample = *((sample_type_t*)buf);
+        latestAvailable = TRUE;
+      }
+    }
+  }
+
+  event void LogWrite.eraseDone(error_t error) {
+    if(error == SUCCESS) {
+      atomic {
+        latestAvailable = FALSE;
+      }
+    }
+  }
+
   event void LogWrite.syncDone(error_t error) {}
   default event void SampleLogRead.readDone(sample_type_t* s, error_t error) {}
 }

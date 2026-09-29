@@ -39,41 +39,45 @@
 module SensingPeriodicSamplerC {
   uses {
     interface Boot;
-    interface SampleLogRead<sensor_sample_t>;
+    interface LatestSample<sensor_sample_t>;
     interface SampleNxConverter;
+    interface Timer<TMilli> as SendTimer;
     interface Leds;
     interface SplitControl as AMControl;
-    interface AMPacket;
-    interface Packet;
     interface AMSend as SampleSend;
-    interface Receive as RequestSamplesReceive;
   }
 }
 implementation {
   message_t sample_msg;
+  sensor_sample_t latest_sample;
   bool sendBusy = FALSE;
 
-  task void readNextTask();
   task void sendSampleMsgTask();
 
-  void readNext() {
-    error_t error = call SampleLogRead.readNext();
-    if(error == FAIL)
-      post readNextTask();
-    else if(error == ECANCEL) {
-      sendBusy = FALSE;
-      call Leds.led1Toggle();
+  void sendLatestSample() {
+    nx_sensor_sample_t* nx_sample;
+
+    if(sendBusy == TRUE)
+      return;
+
+    if(call LatestSample.get(&latest_sample) != SUCCESS)
+      return;
+
+    nx_sample = call SampleSend.getPayload(&sample_msg, sizeof(nx_sensor_sample_t));
+    if(nx_sample == NULL)
+      return;
+
+    call SampleNxConverter.copyToNx(nx_sample, &latest_sample);
+
+    if(call SampleSend.send(BASE_STATION_ADDR, &sample_msg, sizeof(nx_sensor_sample_t)) == SUCCESS) {
+      sendBusy = TRUE;
+      call Leds.led2On();
     }
   }
-  
-  void sendSampleMsg() {
-    if(call SampleSend.send(BASE_STATION_ADDR, &sample_msg, sizeof(nx_sensor_sample_t)) != SUCCESS)
-      post sendSampleMsgTask();
-    else call Leds.led2On();
+
+  task void sendSampleMsgTask() {
+    sendLatestSample();
   }
-  
-  task void readNextTask() { readNext(); }
-  task void sendSampleMsgTask() { sendSampleMsg(); }
 	
   event void Boot.booted() {
     call AMControl.start();
@@ -82,35 +86,26 @@ implementation {
   event void AMControl.startDone(error_t e) {
   	if(e != SUCCESS)
   		call AMControl.start();
+    else
+      call SendTimer.startPeriodic(SAMPLING_INTERVAL);
   }
   
   event void AMControl.stopDone(error_t e) {
   }
-  
-  event void SampleLogRead.readDone(sensor_sample_t* sample, error_t error) {
-    if(error == SUCCESS) {
-      nx_sensor_sample_t* nx_sample = call SampleSend.getPayload(&sample_msg, sizeof(nx_sample));
-      call SampleNxConverter.copyToNx(nx_sample, sample);
-      sendSampleMsg();
-    }
-    else post readNextTask();
-  }
 
-  event message_t* RequestSamplesReceive.receive(message_t* msg, void* payload, uint8_t len) {
+  event void SendTimer.fired() {
     call Leds.led0Toggle();
-    if(sendBusy == FALSE) {
-      sendBusy = TRUE;
-      readNext();
-    }
-    return msg;
+    post sendSampleMsgTask();
   }
 
   event void SampleSend.sendDone(message_t* msg, error_t error) {
-    if(error != SUCCESS)
+    call Leds.led2Off();
+
+    if(error != SUCCESS) {
+      sendBusy = FALSE;
       post sendSampleMsgTask();
-    else {
-      call Leds.led2Off();
-      readNext();
     }
+
+    sendBusy = FALSE;
   }
 }

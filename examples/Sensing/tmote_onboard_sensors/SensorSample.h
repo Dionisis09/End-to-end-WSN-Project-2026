@@ -53,5 +53,13 @@ typedef nx_struct nx_sensor_sample {
   nx_uint16_t total_solar;
 } nx_sensor_sample_t;
 
+#define SENSOR_SAMPLE_PRINTF_FORMAT "count=%lu humidity=%u temperature=%u photo=%u solar=%u"
+#define SENSOR_SAMPLE_PRINTF_ARGS(sample) \
+  (unsigned long)((sample).sample_num), \
+  (unsigned int)((sample).humidity), \
+  (unsigned int)((sample).temperature), \
+  (unsigned int)((sample).photo_active), \
+  (unsigned int)((sample).total_solar)
+
 #endif //SENSORSAMPLE_H
 

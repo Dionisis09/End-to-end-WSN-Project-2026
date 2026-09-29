@@ -41,20 +41,17 @@ implementation {
   components new SamplePeriodicLogC(SAMPLING_INTERVAL, VOLUME_SENSOR_SAMPLES);
   components MainC, SensingPeriodicSamplerC as App;
   components SampleNxConverterC;
+  components new TimerMilliC() as SendTimer;
   MainC.Boot <- App;
-  App.SampleLogRead -> SamplePeriodicLogC;
+  App.LatestSample -> SamplePeriodicLogC;
   App.SampleNxConverter -> SampleNxConverterC;
+  App.SendTimer -> SendTimer;
 
   components ActiveMessageC;
   App.AMControl -> ActiveMessageC;
-  App.AMPacket -> ActiveMessageC;
-  App.Packet -> ActiveMessageC;
 
   components new AMSenderC(AM_SAMPLE_MSG) as SampleSender;
   App.SampleSend -> SampleSender;
-
-  components new AMReceiverC(AM_REQUEST_SAMPLES_MSG) as RequestSamplesReceiver;
-  App.RequestSamplesReceive -> RequestSamplesReceiver;
 
   components LedsC as LedsC;
   App.Leds -> LedsC;

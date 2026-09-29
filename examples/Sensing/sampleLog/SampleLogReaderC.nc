@@ -37,6 +37,7 @@
 generic configuration SampleLogReaderC(typedef sample_type_t) {
   provides {
    interface SampleLogRead<sample_type_t>;
+   interface LatestSample<sample_type_t>;
   }
   uses {
     interface LogRead;
@@ -47,6 +48,7 @@ implementation {
   components new SampleLogReaderP(sample_type_t) as LogReader;
 
   SampleLogRead = LogReader;
+  LatestSample = LogReader;
   LogReader.LogRead = LogRead;
   LogReader.LogWrite = LogWrite;
 }

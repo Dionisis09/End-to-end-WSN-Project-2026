@@ -47,5 +47,10 @@ typedef nx_struct nx_sensor_sample {
   nx_uint16_t sin_value;
 } nx_sensor_sample_t;
 
+#define SENSOR_SAMPLE_PRINTF_FORMAT "count=%lu value=%u"
+#define SENSOR_SAMPLE_PRINTF_ARGS(sample) \
+  (unsigned long)((sample).sample_num), \
+  (unsigned int)((sample).sin_value)
+
 #endif //SENSORSAMPLE_H
 

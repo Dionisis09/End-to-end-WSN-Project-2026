@@ -46,7 +46,17 @@ enum {
 
   AM_SAMPLE_MSG                         = 0x98,
   AM_SERIAL_SAMPLE_MSG                  = 0x99,
+  AM_ROLE_START_MSG                     = 0x9a,
+  AM_PARENT_BEACON_MSG                  = 0x9b,
 };
+
+typedef nx_struct role_start_msg {
+  nx_uint8_t start;
+} role_start_msg_t;
+
+typedef nx_struct parent_beacon_msg {
+  nx_am_addr_t parent_id;
+} parent_beacon_msg_t;
 
 typedef nx_struct serial_request_samples_msg {
   nx_am_addr_t addr;

@@ -39,84 +39,50 @@
 module SensingBaseC {
   uses {
     interface Boot;
-    interface Queue<message_t> as MsgQueue;
     interface Leds;
-
-    interface SplitControl as SerialAMControl;
-    interface AMPacket as SerialAMPacket;
-    interface Packet as SerialPacket;
 
     interface SplitControl as RadioAMControl;
     interface AMPacket as RadioAMPacket;
-    interface Packet as RadioPacket;
-
-    interface Receive as SerialRequestSampleMsgsReceive;
-    interface AMSend as RadioRequestSampleMsgsSend;
     interface Receive as RadioSampleMsgReceive;
-    interface AMSend as SerialSampleMsgSend;
   }
 }
 implementation {
-  bool serialSending;
-  am_addr_t dest_addr;
-  message_t request_samples_msg;
-  message_t sample_msg;
-  serial_sample_msg_t* sample_msg_payload;
-
   event void Boot.booted() {
-    serialSending = FALSE;
-    sample_msg_payload = (serial_sample_msg_t*)call SerialPacket.getPayload(&sample_msg, sizeof(serial_sample_msg_t));
     call RadioAMControl.start();
   }
   
   event void RadioAMControl.startDone(error_t error) {
-    call SerialAMControl.start();
-  }
-
-  event void SerialAMControl.startDone(error_t error) {
+    if(error != SUCCESS)
+      call RadioAMControl.start();
   }
 
   event void RadioAMControl.stopDone(error_t error) {
   }
 
-  event void SerialAMControl.stopDone(error_t error) {
-  }
-
-  event message_t* SerialRequestSampleMsgsReceive.receive(message_t* msg, void* payload, uint8_t len) {
-    serial_request_samples_msg_t* request_msg = payload;
-    call Leds.led0On();
-    call RadioRequestSampleMsgsSend.send(request_msg->addr, &request_samples_msg, sizeof(request_samples_msg_t));
-    return msg;
-  }
-
-  event void RadioRequestSampleMsgsSend.sendDone(message_t* msg, error_t error) {
-    if(error == SUCCESS)
-      call Leds.led0Off();
-  }
-
   event message_t* RadioSampleMsgReceive.receive(message_t* msg, void* payload, uint8_t len) {
+    nx_sensor_sample_t* sample = payload;
+
     call Leds.led2Toggle();
-    if(call MsgQueue.empty() == FALSE || serialSending == TRUE)
-      call MsgQueue.enqueue(*msg);
-    else {
-      sample_msg_payload->src_addr = call RadioAMPacket.source(msg);
-      sample_msg_payload->sample = *((nx_sensor_sample_t*)payload);
-      dest_addr = call SerialAMPacket.destination(msg); 
-      serialSending = TRUE;
-      call SerialSampleMsgSend.send(dest_addr, &sample_msg, sizeof(*sample_msg_payload));
+
+    if(len == sizeof(nx_sensor_sample_t)) {
+      printf(
+        "parent=%u src=%u " SENSOR_SAMPLE_PRINTF_FORMAT "\n",
+        (unsigned int)TOS_NODE_ID,
+        (unsigned int)call RadioAMPacket.source(msg),
+        SENSOR_SAMPLE_PRINTF_ARGS((*sample))
+      );
     }
-    printf("ID: %d\n", TOS_NODE_ID);
+    else {
+      printf(
+        "parent=%u src=%u invalid_len=%u\n",
+        (unsigned int)TOS_NODE_ID,
+        (unsigned int)call RadioAMPacket.source(msg),
+        (unsigned int)len
+      );
+    }
+
     printfflush();
     return msg;
-  }
-
-  event void SerialSampleMsgSend.sendDone(message_t* msg, error_t error) {
-    if(call MsgQueue.empty() == FALSE) {
-      sample_msg = call MsgQueue.dequeue();
-      dest_addr = call SerialAMPacket.destination(msg);
-      call SerialSampleMsgSend.send(dest_addr, &sample_msg, sizeof(serial_sample_msg_t));
-    }
-    else serialSending = FALSE;
   }
 }
 
