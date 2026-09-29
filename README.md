@@ -1,334 +1,160 @@
-# TinyOS Setup Guide: Ubuntu 16.04 on VirtualBox
+# End to end wireless sensor network με TinyOS και TelosB
 
-This guide explains how to set up Ubuntu 16.04 in VirtualBox, configure
-USB access for TelosB and Iris motes, and install TinyOS.
+Υλοποίηση των τεσσάρων ερωτημάτων της εργασίας ΑΙοΤ 2025–2026: ασύρματο δίκτυο αστέρα, αποθήκευση μετρήσεων σε MongoDB, ζωντανό dashboard και ανάλυση χρονοσειράς σε Jupyter Notebook. Η υλοποίηση δοκιμάστηκε με τρία Crossbow TelosB. Το IRIS XM2110 δοκιμάστηκε χωριστά με την εφαρμογή Blink μέσω MIB520CA.
 
-------------------------------------------------------------------------
+Η [αναλυτική τεχνική αναφορά σε Word](report/technical_report.docx) συγκεντρώνει την αρχιτεκτονική, τα τεκμήρια δοκιμών, τα αποτελέσματα και τους περιορισμούς.
 
-## 1. Download and Install Required Software
+> **Προέλευση δεδομένων:** Οι εγγραφές της συλλογής **iot_wsn.measurements** είναι λήψεις από τα TelosB. Το παρεχόμενο τριήμερο σύνολο είναι προσομοίωση και βρίσκεται στη χωριστή συλλογή **iot_wsn.synthetic_measurements** και στο **analysis/synthetic-3days.csv**. Τα αποτελέσματα πρόβλεψης παρακάτω αφορούν μόνο αυτή την προσομοίωση. Δεν έχει επιβεβαιωθεί συνεχής πραγματική καταγραφή τριών ημερών.
 
-Download and install the following:
+## Τι υλοποιήθηκε
 
--   VirtualBox
--   VirtualBox Extension Pack
--   Ubuntu 16.04 ISO
+| Ερώτημα | Υλοποίηση και έλεγχος |
+| --- | --- |
+| 1. Motes και δίκτυο | Το Blink γράφτηκε σε TelosB και IRIS και οι λυχνίες ελέγχθηκαν οπτικά. Τρία TelosB με την ίδια εφαρμογή AutoStar σχηματίζουν αστέρα. Ο USB συνδεδεμένος κόμβος ενεργοποιείται ως πατέρας, εκπέμπει beacons ανά 3 s και οι κόμβοι φύλλα τον ανακαλύπτουν. Λήψεις από τους κόμβους 1 και 2 επαληθεύτηκαν. |
+| 2. MongoDB | Ο ingester διαβάζει τις γραμμές του PrintfClient, προσθέτει χρόνο λήψης UTC και αποθηκεύει τις μετρήσεις στη MongoDB και σε αρχείο JSONL. Ελέγχθηκε με πραγματικά μηνύματα και από τους δύο κόμβους. |
+| 3. Dashboard | Το τοπικό web app δείχνει την τελευταία τιμή ανά κόμβο και ιστορικό 1, 6, 24 ή 72 ωρών. Ανανεώνεται ανά 5 s. Τα API ελέγχθηκαν με πραγματικές εγγραφές. |
+| 4. Ανάλυση | Το notebook εκτελεί στατιστικά, έλεγχο κενών, προεπεξεργασία και πρόβλεψη θερμοκρασίας με Linear Regression και ARIMA. Η πλήρης εκτέλεση τριών ημερών έγινε στο ρητά επισημασμένο σύνολο προσομοίωσης. |
 
-**Make sure you check the "Install Guest Additions" option in the "Set up unattended guest OS installation" when installing Ubuntu 16.04 LTS in the Virtual Box.** 
+## Αρχιτεκτονική
 
-------------------------------------------------------------------------
+~~~mermaid
+flowchart LR
+    T1["TelosB 1<br/>αισθητήρας"] -->|ραδιόφωνο, περίπου 20 s| P["TelosB 0<br/>πατέρας USB"]
+    T2["TelosB 2<br/>αισθητήρας"] -->|ραδιόφωνο, περίπου 20 s| P
+    P -->|σειριακή θύρα και PrintfClient| I["Python ingester"]
+    I --> J["JSONL journal"]
+    I --> M["MongoDB<br/>measurements"]
+    M --> D["Dashboard<br/>live και ιστορικό"]
+    M --> E["CSV export"]
+    E --> N["Jupyter Notebook<br/>στατιστική και πρόβλεψη"]
+~~~
 
-## 2. Enable `sudo` and Terminal Access
+Η εφαρμογή **examples/Sensing/AutoStar** είναι ίδια και στους τρεις κόμβους, με διαφορετικό TinyOS node ID. Κατά την εκκίνηση του **host/start_live.sh**, η εντολή **RoleStart** ορίζει τον κόμβο που είναι συνδεδεμένος στη σειριακή θύρα ως πατέρα. Οι άλλοι κόμβοι αποκτούν αυτόματα τον πατέρα από τα beacons. Το IRIS χρησιμοποιήθηκε μόνο για τον απαιτούμενο έλεγχο Blink και δεν συμμετέχει στο δίκτυο συλλογής.
 
-Boot Ubuntu 16.04 into recovery mode:
+## Δομή αποθετηρίου
 
-1.  While Ubuntu 16.04 LTS is booting, hold the **SHIFT** key.
+| Διαδρομή | Περιεχόμενο |
+| --- | --- |
+| **examples/Sensing/AutoStar/** | Κώδικας nesC για αυτόματο αστέρα και εντολή RoleStart |
+| **examples/Blink/** | Κώδικας ελέγχου λυχνιών |
+| **host/ingest.py** και **host/start_live.sh** | Λήψη, μετατροπή, journal και αποθήκευση |
+| **host/dashboard.py** και **host/dashboard.html** | Τοπικό web app και API |
+| **host/export_csv.py** | Εξαγωγή συλλογής MongoDB σε CSV |
+| **host/generate_synthetic.py** | Αναπαραγώγιμη παραγωγή χωριστού δοκιμαστικού δείγματος |
+| **analysis/sensor_forecast.ipynb** | Στατιστική ανάλυση και μοντέλα |
+| **analysis/RESULTS.md** | Αποτελέσματα και όρια ερμηνείας |
+| **deployment/** | Προαιρετικές υπηρεσίες systemd για συνεχή καταγραφή |
 
-2.  Choose:
+## Προϋποθέσεις
 
-    ``` text
-    Advanced Options for Ubuntu -> <kernel_version> (recovery mode)
-    ```
+- Ubuntu με λειτουργικό περιβάλλον TinyOS και εργαλεία για TelosB και IRIS. Η δοκιμή έγινε σε Ubuntu 16.04 VM στο VirtualBox.
+- Τρία TelosB, καλώδια USB, και MIB520CA για τον χωριστό προγραμματισμό του IRIS. Για ταυτόχρονη σύνδεση τεσσάρων USB συσκευών απαιτείται επιπλέον θύρα ή hub· ο έλεγχος IRIS μπορεί να γίνει προσωρινά στη θέση ενός φύλλου.
+- MongoDB, Java/TinyOS tools, Python 3 και PyMongo μέσα στη VM. Ενδεικτικά για το δοκιμασμένο Ubuntu: **sudo apt-get install mongodb python3-pymongo**. Η εγκατάσταση TinyOS και των εργαλείων προγραμματισμού πρέπει να ολοκληρωθεί πριν από τις παρακάτω εντολές.
+- Δικαιώματα πρόσβασης στις σειριακές θύρες, π.χ. συμμετοχή του χρήστη στην ομάδα **dialout**. Στη VM πρέπει να έχει αποδοθεί η συσκευή USB μέσω VirtualBox USB filter.
+- Για το notebook, συμβατό περιβάλλον Python με τα πακέτα του **analysis/requirements.txt**. Μπορεί να είναι ξεχωριστό από την παλιά Ubuntu VM.
 
-3.  Choose **root** and press **ENTER**.
+Οι διαδρομές **/dev/ttyUSB0**, **/dev/ttyUSB1** και **/dev/ttyUSB2** ήταν οι θύρες της δοκιμής. Μετά από επανασύνδεση ελέγξτε τη νέα αντιστοίχιση με **ls -l /dev/serial/by-id/** ή **dmesg**. Οι TinyOS node IDs της δοκιμής ήταν 0 για τον πατέρα και 1, 2 για τους αισθητήρες.
 
-Remount the filesystem as writable:
+## Μεταγλώττιση και προγραμματισμός
 
-``` bash
-mount -o remount,rw /
-```
+Τοποθετήστε αυτό το αποθετήριο μέσα στο δέντρο TinyOS, για παράδειγμα ως **~/tinyos-main/iot-implementation**. Στο Ubuntu guest:
 
-Add your user to the `sudo` group:
+~~~bash
+cd ~/tinyos-main/iot-implementation/examples/Sensing/AutoStar
+make telosb
+make telosb install.0 bsl,/dev/ttyUSB0
+make telosb install.1 bsl,/dev/ttyUSB1
+make telosb install.2 bsl,/dev/ttyUSB2
+make -f Makefile.role
+~~~
 
-``` bash
-adduser <your_username> sudo
-```
+Για τον έλεγχο Blink στο TelosB χρησιμοποιήστε την εφαρμογή TinyOS **apps/Blink** και τον αντίστοιχο προγραμματιστή BSL. Για το IRIS XM2110, τοποθετήστε το στη MIB520CA και επιλέξτε τη θύρα προγραμματισμού της πλακέτας:
 
-Edit the locale file:
+~~~bash
+cd ~/tinyos-main/apps/Blink
+make iris install.3 mib520,/dev/ttyUSB2
+~~~
 
-``` bash
-nano /etc/default/locale
-```
+Η τελευταία θύρα είναι παράδειγμα από τη δοκιμή όπου είχε αποσυνδεθεί προσωρινά ένα TelosB. Η MIB520 εμφανίζει δύο σειριακές θύρες· βεβαιωθείτε ποια είναι η θύρα προγραμματισμού πριν εκτελέσετε την εντολή. Οι λυχνίες Blink ελέγχθηκαν οπτικά και στους δύο τύπους mote.
 
-Update the entries so that all values are:
+## Καταγραφή και dashboard
 
-``` text
-en_US.UTF-8
-```
+Εκκινήστε τη MongoDB και **μία μόνο** διεργασία ingester. Από τη ρίζα του αποθετηρίου μέσα στη VM:
 
-Save and exit, then run:
+~~~bash
+sudo systemctl start mongodb
+make -C examples/Sensing/AutoStar -f Makefile.role
+bash host/start_live.sh serial@/dev/ttyUSB0:telosb --journal "$HOME/measurements.jsonl"
+~~~
 
-``` bash
-locale-gen
-reboot
-```
+Η εντολή ενεργοποιεί πρώτα τον πατέρα μέσω σειριακής σύνδεσης και μετά διαβάζει το PrintfClient. Κάθε εισερχόμενο μήνυμα έχει μία γραμμή της μορφής:
 
-Verify terminal access after reboot:
+~~~text
+parent=0 src=1 count=42 humidity=1450 temperature=6800 photo=8 solar=12
+~~~
 
-1.  Log in to Ubuntu 16.04.
-2.  Press:
+Σε δεύτερο terminal:
 
-``` text
-Ctrl + Alt + T
-```
+~~~bash
+cd ~/tinyos-main/iot-implementation/host
+python3 dashboard.py --bind 0.0.0.0 --port 8765
+~~~
 
-------------------------------------------------------------------------
+Ανοίξτε **http://127.0.0.1:8765/** μέσα στη VM. Για πρόσβαση από Windows host με VirtualBox NAT, προωθήστε τη θύρα TCP 8765 του host στη θύρα 8765 του guest. Η προεπιλογή του dashboard είναι οι πραγματικές μετρήσεις.
 
-## 3. Add User to `vboxusers` in the host machine (only if the host machine is Linux based)
+Για αυτόματη επανεκκίνηση στη δοκιμασμένη VM, προσαρμόστε πρώτα χρήστη και διαδρομές των **deployment/iot-ingest.service** και **deployment/iot-dashboard.service** αν διαφέρουν, και εγκαταστήστε τις:
 
-``` bash
-sudo adduser $USER vboxusers
-```
+~~~bash
+sudo cp deployment/iot-ingest.service deployment/iot-dashboard.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now iot-ingest.service iot-dashboard.service
+systemctl status mongodb iot-ingest iot-dashboard
+~~~
 
-Then log out and back in, or reboot.
+Μην εκτελείτε ταυτόχρονα χειροκίνητο ingester και την υπηρεσία, επειδή και οι δύο θα επιχειρήσουν να χρησιμοποιήσουν την ίδια σειριακή θύρα. Για συνεχή πραγματική καταγραφή πρέπει να παραμένουν ενεργά ο υπολογιστής, η VM, η MongoDB και τα motes.
 
-------------------------------------------------------------------------
+## Δεδομένα και προέλευση
 
-## 4. Install VirtualBox Recommendations
+Ο ingester γράφει κάθε πραγματική λήψη στη συλλογή **iot_wsn.measurements**. Τα πεδία είναι **timestamp** σε UTC, **parent_id**, **source_id**, **count**, ακατέργαστες τιμές **temperature_raw**, **humidity_raw**, **photo_raw**, **solar_raw**, εκτιμήσεις **temperature_c**, **humidity_pct** και η αρχική **raw_line**. Η μετατροπή θερμοκρασίας και υγρασίας υποθέτει τροφοδοσία αισθητήρα 3 V· κρατούνται οι ακατέργαστες τιμές ώστε να είναι δυνατός επανυπολογισμός. Ο χρόνος είναι ο χρόνος λήψης στον υπολογιστή, όχι εσωτερικό ρολόι του mote.
 
-Add the VirtualBox Extension Pack:
+Πριν από κάθε εισαγωγή ο ingester γράφει σε append only JSONL journal. Στην επανεκκίνηση αναπαράγει εγγραφές του journal που λείπουν από τη MongoDB. Αυτό περιορίζει την απώλεια δεδομένων σε παροδική αποτυχία βάσης, χωρίς να εγγυάται παραλαβή κάθε ασύρματου πακέτου.
 
-Extensions > Install > \<the downloaded extension pack\>
+Το αρχείο **analysis/synthetic-3days.csv** περιέχει 25.920 τεχνητές εγγραφές, 12.960 ανά κόμβο, ανά 20 s στο διάστημα 26–29 Σεπτεμβρίου 2026 UTC. Ο δημιουργός **host/generate_synthetic.py** αποθηκεύει το ίδιο σενάριο στη χωριστή συλλογή **iot_wsn.synthetic_measurements**. Κάθε εγγραφή φέρει **data_origin=synthetic** και **scenario_id=demo-3days-v1**. Στο dashboard επιλέξτε **Συνθετικές · 3 ημέρες** για την προσομοίωση· εμφανίζεται και σχετική επισήμανση.
 
-------------------------------------------------------------------------
+## Εξαγωγή και ανάλυση
 
-## 5. Configure USB Devices in VirtualBox
+Για εξαγωγή πραγματικών μετρήσεων από τη VM:
 
-1.  Close the VM.
+~~~bash
+cd ~/tinyos-main/iot-implementation
+python3 host/export_csv.py --collection measurements --output analysis/measurements.csv
+~~~
 
-2.  Plug in the TelosB and Iris motes.
+Το notebook επιλέγει **analysis/measurements.csv** αν υπάρχει· αλλιώς χρησιμοποιεί το παρεχόμενο **analysis/synthetic-3days.csv**. Εκτελέστε το από τον κατάλογο **analysis** σε συμβατό περιβάλλον Python:
 
-3.  In VirtualBox, right-click the VM.
+~~~bash
+python -m pip install -r requirements.txt
+jupyter notebook sensor_forecast.ipynb
+~~~
 
-4.  Go to:
+Η ανάλυση ελέγχει πλήθος και εύρος μετρήσεων, περιγραφικά στατιστικά και κενές τιμές. Η χρονοσειρά αναδειγματοληπτείται ανά 20 s και παρεμβάλλονται μόνο σύντομα κενά έως δύο διαστημάτων. Η εκπαίδευση χρησιμοποιεί το πρώτο 80% του χρόνου και ο έλεγχος το τελευταίο 20%. Η Linear Regression χρησιμοποιεί την τρέχουσα και δύο προηγούμενες τιμές για την επόμενη θερμοκρασία. Το ARIMA(1,0,0) εκπαιδεύεται στην αρχική περίοδο και προβλέπει όλο το υπόλοιπο διάστημα. Επειδή πρόκειται για διαφορετικό ορίζοντα πρόβλεψης, οι αριθμοί των δύο μοντέλων δεν αποτελούν ισοδύναμη συγκριτική δοκιμή.
 
-    ``` text
-    Settings -> USB
-    ```
+Από την εκτέλεση στο **συνθετικό** σενάριο:
 
-5.  Click **Add Filter**.
+| Μοντέλο | MAE θερμοκρασίας | RMSE θερμοκρασίας |
+| --- | ---: | ---: |
+| Linear Regression | 0,166 °C | 0,209 °C |
+| ARIMA(1,0,0) | 2,269 °C | 2,634 °C |
 
-6.  Choose the Iris and TelosB motes.
+Οι μετρικές αυτές ελέγχουν τη λειτουργία της διαδικασίας. Δεν αποτελούν επίδοση σε πραγματικά δεδομένα TelosB. Για ανάλυση πραγματικού τριημέρου, αφήστε τη συλλογή να λειτουργήσει τρεις ημέρες, εξαγάγετε νέο **analysis/measurements.csv** και εκτελέστε ξανά το notebook.
 
-------------------------------------------------------------------------
+## Έλεγχος και γνωστοί περιορισμοί
 
-## 6. Update and Upgrade Packages
+Οι εφαρμογές μεταγλωττίστηκαν και γράφτηκαν στις αντίστοιχες συσκευές. Οι λυχνίες Blink επιβεβαιώθηκαν οπτικά. Επαληθεύτηκαν λήψεις των δύο TelosB, αποθήκευση στη MongoDB, συμφωνία MongoDB με το JSONL journal, ζωντανά και ιστορικά API, και πλήρης εκτέλεση του notebook στο συνθετικό CSV. Οι δοκιμές parser εκτελούνται από τη ρίζα του αποθετηρίου με **python3 -m unittest discover -s host -p 'test_ingest.py'**.
 
-Run:
+Η ασύρματη μετάδοση είναι best effort, άρα η ακολουθία **count** μπορεί να έχει κενά. Οι πραγματικές θερμοκρασίες και υγρασίες είναι εκτιμήσεις από τις ακατέργαστες τιμές υπό την υπόθεση τροφοδοσίας 3 V. Η συλλογή πραγματικού τριημέρου δεν αποδεικνύεται από το διαθέσιμο σύντομο δείγμα. Η αναλυτική τεχνική αναφορά διατίθεται χωριστά ως έγγραφο Word.
 
-``` bash
-sudo apt update && sudo apt upgrade
-```
+## Πηγές
 
-------------------------------------------------------------------------
-
-## 7. Install Necessary Packages
-
-Run:
-
-``` bash
-sudo apt install -y python2.7 python-minimal openjdk-8-jdk gcc-avr avr-libc nescc minicom wget unzip automake autoconf libtool avrdude curl gcc-msp430 git python-serial tinyos-tools
-```
-
-------------------------------------------------------------------------
-
-## 8. Install TinyOS
-
-Clone the TinyOS repository:
-
-``` bash
-git clone https://github.com/tinyos/tinyos-main.git
-```
-
-Go into the TinyOS tools directory:
-
-``` bash
-cd ~/tinyos-main/tools
-```
-
-Build and install TinyOS tools:
-
-``` bash
-./Bootstrap
-./configure
-make
-sudo make install
-```
-
-------------------------------------------------------------------------
-
-## 9. Configure USB Permissions
-
-Add your user to the `dialout` group:
-
-``` bash
-sudo usermod -aG dialout $USER
-```
-
-Reboot:
-
-``` bash
-reboot
-```
-
-## 10. Create Shared Folder
-
-1. Close the VM
-2. Go to Settings > Shared Folders > Add new shared folder
-3. Pick a folder (or better, create a new one to the Host machine and choose this one)
-4. Check the auto-mount option
-5. apply changes and open the VM
-6. In the terminal, run:
-``` bash
-sudo usermod -aG vboxsf $USER
-```
-7. Log-out and login back or reboot
-
-------------------------------------------------------------------------
-
-## Done
-
-Ubuntu 16.04, TinyOS, and mote USB access should now be configured.
-
-# Περαιτέρω οδηγίες
-
-## Σχετικά με τις μετρήσεις
-
-1. Όσες ομάδες έχουν TelosB mote, να χρησιμοποιήσουν τους πραγματικούς sensors του TelosB
-2. Όσες ομάδες δεν έχουν TelosB mote, να χρησιμοποιήσουν 'fake' μετρήσεις.
-
-Συγκεκριμένα, μελετήστε το παράδειγμα Sensing. Όσοι έχουν TelosB, να χρησιμοποιήσουν το tmote_onboard_sensors module, ενώ όσοι δεν έχουν να χρησιμοποιήσουν το universal_sensors module. Περισσότερες λεπτομέρειες στο README του παραδείγματος.
-
-## Εύρεση των θυρών USB
-
-Για να βρείτε σε ποιά θύρα USB είναι συνδεδεμένο το mote, χρησιμοποιήστε την παρακάτω εντολή:
-
-``` bash
-ls /dev | grep ttyUSB* 
-```
-
-## Compile and Flash programs
-
-### TelosB
-
-Για να φορτώσετε κώδικα στα TelosB εκτελείτε τις παρακάτω εντολές:
-
-``` bash
-sudo make clean  // Optional, but useful sometimes
-sudo make telosb install.<TOS_NODE_ID>  bsl,/dev/ttyUSBx  // Βρείτε τη θύρα USB στην οποία είναι συνδεδεμένη η συσκευή σας
-```
-
-Παράδειγμα εκτέλεσης:
-
-``` bash
-sudo make clean
-sudo make telosb install.0 bsl,/dev/ttyUSB0 // Εδώ περνάμε TOS_NODE_ID=0 και το mote είναι συνδεδεμένο στη θύρα USB0
-```
-
-### IRIS
-
-Αντίστοιχα, για τα IRIS χρησιμοποιήστε τις παρακάτω εντολές:
-``` bash
-sudo make clean
-sudo make iris install.<TOS_NODE_ID> mib520,/dev/ttyUSBx  // Βρείτε τη θύρα USB στην οποία είναι συνδεδεμένη η συσκευή σας
-```
-
-Παράδειγμα εκτέλεσης:
-
-``` bash
-sudo make clean
-sudo make telosb install.0 bsl,/dev/ttyUSB0 // Εδώ περνάμε TOS_NODE_ID=0 και το mote είναι συνδεδεμένο στη θύρα USB0
-```
-
-**Προσοχη: Όταν συνδέσετε ένα TelosB mote, θα δείτε ότι εμφανίζει μία μόνο θύρα USB στον φάκελο /dev. Ωστόσο, για το IRIS mote, εμφανίζει 2 θύρες. Θα χρησιμοποιήσετε την 1η θύρα μόνο κατα τη διαδικασία flash την εφαρμογής σας και τη δεύτερη θύρα μόνο όταν θέλετε να διαβάσετε output της συσκευής (π.χ. τα αποτελέσματα των printf εντολών σας).**
-
-## PrintfClient
-
-Αν γράψετε printf εντολές, τότε πρέπει να ξεκινήσετε έναν PrintfClient για να μπορέσετε να δείτε τα αποτελέσματα των printf εντολών. Για να το κάνετε, εκτελέστε μία από τις παρακάτω εντολές, ανάλογα με το mote που θέλετε να ελέγξετε:
-
-### TelosB
-
-``` bash
-sudo java net.tinyos.tools.PrintfClient -comm serial@/dev/ttyUSBx:telosb   // Βρείτε τη θύρα USB στην οποία είναι συνδεδεμένο το mote
-```
-
-### IRIS
-```bash
-sudo java net.tinyos.tools.PrintfClient -comm serial@/dev/ttyUSBx:iris   // Βρείτε τη θύρα USB στην οποία είναι συνδεδεμένο το mote
-```
-
-## SerialForwarder
-
-Προτείνουμε, αντί να ξεκινήσετε έναν Client ο οποίος θα "μιλάει" κατευθείαν με τη θύρα USB, μπορείτε να ξεκινήσετε ένα Network Socket, το οποίο θα "μιλάει" με τη συσκευή μέσω UART και o Client θα "μιλάει" με το Network Socket. Γενικά, είναι πιο stable σαν μέθοδος. Επίσης, optionally μπορείτε να χρησιμοποιήσετε και το δικό σας port number. Το default είναι 9002.
-
-### TelosB (Παράδειγμα για PrintfClient)
-``` bash
-sudo java net.tinyos.sf.SerialForwarder -comm serial@/dev/ttyUSB*:telosb <-port 9002> // Βρείτε τη θύρα USB στην οποία είναι συνδεδεμένο το mote
-sudo java net.tinyos.tools.PrintfClient -comm sf@localhost:<port>
-```
-
-### IRIS (Παράδειγμα για PrintfClient)
-``` bash
-sudo java net.tinyos.sf.SerialForwarder -comm serial@/dev/ttyUSB*:iris <-port 9002> // Βρείτε τη θύρα USB στην οποία είναι συνδεδεμένο το mote
-sudo java net.tinyos.tools.PrintfClient -comm sf@localhost:<port>
-```
-
-
-# Προτάσεις
-
-Δείτε αναλυτικά τα παρακάτω παραδείγματα που περιέχονται στη βιβλιοθήκη, καθώς και τα παραδείγματα (examples) που δίνονται στο παρόν Repository:
-
-1. examples/Blink
-2. examples/BlinkToRadio
-3. examples/Sensing
-
-Τα παραδείγματα αυτά είναι παραλλαγές των αρχικών παραδειγμάτων του TinyOS:
-
-1. apps/Blink
-2. apps/tutorials/BlinkToRadio
-3. examples/LowPowerSensing
-
-# Αναφορά
-
-Η υλοποίηση και οι ακριβείς εντολές εκτέλεσης βρίσκονται στο
-[`host/README.md`](host/README.md). Η δοκιμή έγινε σε Ubuntu 16.04 VM με
-TinyOS και τρία TelosB. Το IRIS ελέγχθηκε ξεχωριστά μέσω MIB520CA.
-
-## 1ο μέρος
-
-Το Blink γράφτηκε και ελέγχθηκε οπτικά σε TelosB και IRIS XM2110. Στα τρία
-TelosB εγκαταστάθηκε η ίδια εφαρμογή `examples/Sensing/AutoStar` με μοναδικά
-ID 0, 1 και 2. Η εφαρμογή `host/start_live.sh` δίνει μέσω σειριακής θύρας
-την εντολή στον USB συνδεδεμένο κόμβο να γίνει πατέρας. Τα υπόλοιπα motes
-μαθαίνουν αυτόματα τον πατέρα από ραδιομηνύματα ανά 3 δευτερόλεπτα. Οι
-κόμβοι φύλλα στέλνουν τις τελευταίες μετρήσεις ανά 20 δευτερόλεπτα και ο
-πατέρας τις τυπώνει σε μία γραμμή. Επαληθεύτηκαν λήψεις από τους κόμβους
-1 και 2 μετά την ενεργοποίηση.
-
-## 2ο μέρος
-
-Ο `host/ingest.py` διαβάζει τις γραμμές του PrintfClient, αποδίδει χρόνο
-λήψης UTC, κρατά τις ακατέργαστες τιμές, υπολογίζει εκτιμώμενη θερμοκρασία
-και υγρασία και εισάγει κάθε εγγραφή στη MongoDB (`iot_wsn.measurements`).
-Πριν την εισαγωγή γράφει επίσης αρχείο JSONL. Η βάση και το JSONL
-επαληθεύτηκαν με πραγματικές μετρήσεις και από τα δύο TelosB.
-
-## 3ο μέρος
-
-Ο `host/dashboard.py` σερβίρει την `host/dashboard.html`, με ανανέωση ανά
-5 δευτερόλεπτα, τελευταία μέτρηση ανά κόμβο, γραφήματα και ιστορικό 1, 6,
-24 ή 72 ωρών. Τα `/api/latest` και `/api/history` ελέγχθηκαν με πραγματικές
-εγγραφές της MongoDB.
-
-## 4ο μέρος
-
-Ο `host/export_csv.py` εξάγει CSV από τη MongoDB. Το
-`analysis/sensor_forecast.ipynb` περιέχει στατιστική ανάλυση, έλεγχο
-ελλείψεων, προεπεξεργασία, χρονολογικό διαχωρισμό και δοκιμή Linear
-Regression και ARIMA για την επόμενη τιμή ενός κόμβου. Το notebook
-εκτελέστηκε επιτυχώς σε **σύντομο πραγματικό δείγμα**. Η απαιτούμενη
-συλλογή περίπου τριών ημερών δεν έχει ακόμη ολοκληρωθεί. Για να γίνει,
-πρέπει να παραμείνουν ενεργά VM, motes, MongoDB και ingester.
-Για άμεση δοκιμή υπάρχει επιπλέον ξεχωριστό, ρητά επισημασμένο
-**συνθετικό** σύνολο τριών ημερών στη συλλογή `synthetic_measurements`.
-Το αρχείο `analysis/synthetic-3days.csv` περιλαμβάνεται για αναπαραγωγή
-του notebook χωρίς σύνδεση στην τοπική MongoDB.
+- [Εκφώνηση της εργασίας και αρχικό αποθετήριο](https://github.com/IoTLabUpatras/End-to-end-WSN-Project-2026)
+- [Sensirion SHT1x datasheet](https://sensirion.com/en/media/documents/BD45ECB5/61642783/Sensirion_Humidity_Sensors_SHT1x_Datasheet.pdf)
